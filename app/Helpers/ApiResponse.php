@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Helpers;
+
 class ApiResponse
 {
     public static function success($data = null, $message = 'Success', $code = 200)
@@ -11,7 +13,7 @@ class ApiResponse
         ], $code);
     }
 
-    public static function error($message = 'Error', $code = 500, $data = null)
+    public static function error($message = 'Error', $code = 400, $data = null)
     {
         return response()->json([
             'status' => false,

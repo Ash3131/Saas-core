@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\API;
 
-use App\Http\Controllers\API\BaseController;
+use App\Http\Controllers\API\BaseAPIController;
 use Illuminate\Http\Request;
 use App\Services\AuthService;
 
-class AuthController extends BaseController
+class AuthController extends BaseAPIController
 {
     protected $authService;
 

@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Helpers\ApiResponse;
 
-class BaseController extends Controller
+class BaseAPIController extends Controller
 {
     protected function handleResponse($response)
     {
