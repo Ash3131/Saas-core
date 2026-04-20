@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Role;
 use Illuminate\Support\Facades\Hash;
-
 use App\Interfaces\UserRepositoryInterface;
 
 class AuthService
@@ -20,6 +20,13 @@ class AuthService
         $data['password'] = Hash::make($data['password']);
 
         $user = $this->userRepo->create($data);
+
+        // Assign default role
+        $role = Role::where('name', 'user')->first();
+
+        if ($role) {
+            $user->roles()->syncWithoutDetaching([$role->id]);
+        }
 
         $token = $user->createToken('auth_token')->plainTextToken;
 

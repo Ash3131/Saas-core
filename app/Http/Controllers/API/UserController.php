@@ -42,6 +42,19 @@ class UserController extends BaseAPIController
         );
     }
 
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:6',
+        ]);
+    
+        return $this->handleResponse(
+            $this->userService->createUser($validated)
+        );
+    }
+
     public function destroy($id)
     {
         return $this->handleResponse(

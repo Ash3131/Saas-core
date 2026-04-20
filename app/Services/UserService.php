@@ -79,6 +79,20 @@ class UserService
         ];
     }
 
+    public function createUser($data)
+    {
+        $data['password'] = Hash::make($data['password']);
+    
+        $user = $this->userRepo->create($data);
+    
+        return [
+            'status' => true,
+            'message' => 'User created successfully',
+            'data' => $user,
+            'code' => 201
+        ];
+    }
+
     public function deleteUser($id)
     {
         $user = $this->userRepo->findById($id);
