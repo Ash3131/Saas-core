@@ -19,7 +19,9 @@ class BaseAPIController extends Controller
 
         return ApiResponse::success(
             $response['data'] ?? null,
-            $response['message']
+            $response['message'],
+            $response['code'] ?? 200,
+            $response['meta'] ?? null
         );
     }
 }
