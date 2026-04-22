@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\User;
+use App\Models\Scopes\CompanyScope;
 use Illuminate\Support\Facades\Hash;
 use App\Interfaces\UserRepositoryInterface;
 
@@ -12,6 +14,14 @@ class UserService
     public function __construct(UserRepositoryInterface $userRepo)
     {
         $this->userRepo = $userRepo;
+    }
+
+    private function isUnauthorizedTenant($user)
+    {
+        $authUser = auth()->user();
+
+        return !$authUser->hasRole('super_admin') &&
+               $user->company_id !== $authUser->company_id;
     }
 
     public function getUsers($filters)
@@ -34,8 +44,8 @@ class UserService
 
     public function getUserById($id)
     {
-        $user = $this->userRepo->findById($id);
-
+        $user = User::withoutGlobalScope(CompanyScope::class)->find($id);
+    
         if (!$user) {
             return [
                 'status' => false,
@@ -43,7 +53,17 @@ class UserService
                 'code' => 404
             ];
         }
-
+    
+        // Tenant check
+        if ($this->isUnauthorizedTenant($user)) {
+            
+            return [
+                'status' => false,
+                'message' => 'Unauthorized access',
+                'code' => 403
+            ];
+        }
+    
         return [
             'status' => true,
             'message' => 'User fetched successfully',
@@ -54,7 +74,7 @@ class UserService
 
     public function updateUser($id, $data)
     {
-        $user = $this->userRepo->findById($id);
+        $user = User::withoutGlobalScope(CompanyScope::class)->find($id);
 
         if (!$user) {
             return [
@@ -64,17 +84,28 @@ class UserService
             ];
         }
 
+        // Tenant check
+        if ($this->isUnauthorizedTenant($user)) {
+
+            return [
+                'status' => false,
+                'message' => 'Unauthorized access',
+                'code' => 403
+            ];
+        }
+
+
         // Hash password if present
         if (!empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
 
-        $updatedUser = $this->userRepo->update($id, $data);
+        $user->update($data);
 
         return [
             'status' => true,
             'message' => 'User updated successfully',
-            'data' => $updatedUser,
+            'data' => $user,
             'code' => 200
         ];
     }
@@ -95,8 +126,8 @@ class UserService
 
     public function deleteUser($id)
     {
-        $user = $this->userRepo->findById($id);
-    
+        $user = User::withoutGlobalScope(CompanyScope::class)->find($id);
+
         if (!$user) {
             return [
                 'status' => false,
@@ -104,8 +135,18 @@ class UserService
                 'code' => 404
             ];
         }
+
+        // Tenant check
+        if ($this->isUnauthorizedTenant($user)) {
+
+            return [
+                'status' => false,
+                'message' => 'Unauthorized access',
+                'code' => 403
+            ];
+        }
     
-        $this->userRepo->delete($id);
+        $user->delete();
     
         return [
             'status' => true,

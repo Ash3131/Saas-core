@@ -7,6 +7,7 @@ use App\Interfaces\UserRepositoryInterface;
 
 class UserRepository implements UserRepositoryInterface
 {
+    
     public function create(array $data)
     {
         return User::create($data);

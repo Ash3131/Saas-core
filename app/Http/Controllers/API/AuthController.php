@@ -21,6 +21,7 @@ class AuthController extends BaseAPIController
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
+            'company_name' => 'nullable|string|max:255',
         ]);
 
         return $this->handleResponse(

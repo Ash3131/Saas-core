@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Scopes\CompanyScope;
 use Laravel\Sanctum\HasApiTokens;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -12,7 +13,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'company_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -32,6 +33,20 @@ class User extends Authenticatable
         ];
     }
 
+    protected static function booted()
+    {
+        static::addGlobalScope(new CompanyScope);
+
+        static::creating(function ($model) {
+            $user = auth()->user();
+
+            // Only assign if not already set
+            if (!$model->company_id && $user) {
+                $model->company_id = $user->company_id;
+            }
+        });
+    }
+
     public function roles()
     {
         return $this->belongsToMany(Role::class);
@@ -49,5 +64,10 @@ class User extends Authenticatable
                 $query->where('name', $permissionName);
             })
             ->exists();
+    }
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
     }
 }

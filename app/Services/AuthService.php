@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Role;
+use App\Models\Company;
 use Illuminate\Support\Facades\Hash;
 use App\Interfaces\UserRepositoryInterface;
 
@@ -17,7 +18,14 @@ class AuthService
 
     public function register($data)
     {
+        $companyName = $data['company_name'] ?? ($data['name'] . "'s Company");
+        $company = Company::create([
+            'name' => $companyName
+        ]);
+        unset($data['company_name']);
+
         $data['password'] = Hash::make($data['password']);
+        $data['company_id'] = $company->id;
 
         $user = $this->userRepo->create($data);
 
@@ -35,6 +43,7 @@ class AuthService
             'message' => 'Registration successful',
             'data' => [
                 'user' => $user,
+                'company' => $company,
                 'token' => $token
             ],
             'code' => 201
