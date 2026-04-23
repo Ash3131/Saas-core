@@ -61,4 +61,47 @@ class UserController extends BaseAPIController
             $this->userService->deleteUser($id)
         );
     }
+    public function notifications(Request $request)
+    {
+        $notifications = $request->user()
+            ->notifications()
+            ->latest()
+            ->paginate($request->get('per_page', 10));
+
+        $data = collect($notifications->items())->map(function ($n) {
+            return [
+                'id' => $n->id,
+                'message' => $n->data['message'] ?? null,
+                'user_id' => $n->data['user_id'] ?? null,
+                'read' => !is_null($n->read_at),
+                'created_at' => $n->created_at,
+            ];
+        });
+
+        return $this->handleResponse([
+            'status' => true,
+            'message' => 'Notifications fetched',
+            'data' => $data,
+            'meta' => [
+                'current_page' => $notifications->currentPage(),
+                'last_page' => $notifications->lastPage(),
+                'per_page' => $notifications->perPage(),
+                'total' => $notifications->total(),
+                'unread_count' => $request->user()->unreadNotifications()->count(),
+            ],
+            'code' => 200
+        ]);
+    }
+    
+    public function markAsReadAll(Request $request)
+    {
+        $request->user()->unreadNotifications->markAsRead();
+
+        return $this->handleResponse([
+            'status' => true,
+            'message' => 'Marked as read',
+            'data' => null,
+            'code' => 200
+        ]);
+    }
 }

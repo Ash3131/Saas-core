@@ -10,7 +10,23 @@ class UserRepository implements UserRepositoryInterface
     
     public function create(array $data)
     {
-        return User::create($data);
+        $user = new User();
+
+        $user->fill($data);
+
+        // assign company id
+        if (isset($data['company_id'])) {
+            $user->company_id = $data['company_id'];
+        }
+
+        // assign created by
+        if (isset($data['created_by'])) {
+            $user->created_by = $data['created_by'];
+        }
+
+        $user->save();
+
+        return $user;
     }
 
     public function findByEmail(string $email)

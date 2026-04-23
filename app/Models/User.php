@@ -38,13 +38,23 @@ class User extends Authenticatable
         static::addGlobalScope(new CompanyScope);
 
         static::creating(function ($model) {
-            $user = auth()->user();
+            $authUser = auth()->user();
 
-            // Only assign if not already set
-            if (!$model->company_id && $user) {
-                $model->company_id = $user->company_id;
+            // company_id
+            if (!$model->company_id && $authUser) {
+                $model->company_id = $authUser->company_id;
+            }
+
+            // created_by
+            if (!$model->created_by && $authUser) {
+                $model->created_by = $authUser->id;
             }
         });
+    }
+    
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function roles()

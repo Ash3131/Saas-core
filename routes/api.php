@@ -11,6 +11,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::get('/profile', [AuthController::class, 'profile']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    
+    // Notifications
+    Route::get('/notifications', [UserController::class, 'notifications']);
+    Route::post('/notifications-read-all', [UserController::class, 'markAsReadAll']);
 
     // Users
     Route::prefix('users')->group(function () {

@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Scopes\CompanyScope;
 use Illuminate\Support\Facades\Hash;
 use App\Interfaces\UserRepositoryInterface;
+use App\Notifications\UserCreatedNotification;
 
 class UserService
 {
@@ -21,6 +22,7 @@ class UserService
     {
         ActivityLog::create([
             'user_id' => auth()->id(),
+            'company_id' => auth()->user()?->company_id,
             'action' => $action,
             'subject_type' => get_class($model),
             'subject_id' => $model->id,
@@ -112,7 +114,6 @@ class UserService
             ];
         }
 
-        // Tenant check
         if ($this->isUnauthorizedTenant($user)) {
             return [
                 'status' => false,
@@ -121,17 +122,36 @@ class UserService
             ];
         }
 
+        $hidden = ['password', 'remember_token', 'updated_at', 'created_at'];
+
+        $oldData = collect($user->toArray())->except($hidden)->toArray();
+
         if (!empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
 
         $user->update($data);
 
+        $newData = collect($user->fresh()->toArray())->except($hidden)->toArray();
+
+        $changedNew = array_diff_assoc($newData, $oldData);
+
+        if (empty($changedNew)) {
+            return [
+                'status' => true,
+                'message' => 'User updated successfully',
+                'data' => $user,
+                'code' => 200
+            ];
+        }
+
+        $changedOld = array_intersect_key($oldData, $changedNew);
+
         $this->logActivity(
             'updated',
             $user,
-            $oldData,
-            $user->fresh()->toArray()
+            $changedOld,
+            $changedNew
         );
 
         return [
@@ -147,6 +167,12 @@ class UserService
         $data['password'] = Hash::make($data['password']);
     
         $user = $this->userRepo->create($data);
+
+        $admin = auth()->user();
+
+        if ($admin) {
+            $admin->notify(new UserCreatedNotification($user));
+        }
 
         $this->logActivity(
             'created',
@@ -185,14 +211,11 @@ class UserService
             ];
         }
     
+        $oldData = collect($user->toArray())->except(['password', 'remember_token', 'updated_at', 'created_at'])->toArray();
+
         $user->delete();
 
-        $this->logActivity(
-            'deleted',
-            $user,
-            $oldData,
-            null
-        );
+        $this->logActivity('deleted', $user, $oldData, null);
     
         return [
             'status' => true,

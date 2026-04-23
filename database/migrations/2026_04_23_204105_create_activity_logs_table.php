@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('user_id')->nullable(); // who did it
+            $table->foreignId('company_id')->nullable(); // company who owns the record
             $table->string('action'); // activity
             $table->string('subject_type'); // User, Company, etc.
             $table->unsignedBigInteger('subject_id'); // affected record
