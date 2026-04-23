@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\ActivityLog;
 use App\Models\Scopes\CompanyScope;
 use Illuminate\Support\Facades\Hash;
 use App\Interfaces\UserRepositoryInterface;
@@ -16,12 +17,37 @@ class UserService
         $this->userRepo = $userRepo;
     }
 
+    private function logActivity($action, $model, $old = null, $new = null)
+    {
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'action' => $action,
+            'subject_type' => get_class($model),
+            'subject_id' => $model->id,
+            'old_values' => $old,
+            'new_values' => $new,
+        ]);
+    }
+
+    private function allowedUserUpdateData(array $data): array
+    {
+        // Only these fields are updatable
+        $allowed = ['name', 'email', 'password'];
+
+        return array_intersect_key($data, array_flip($allowed));
+    }
+
+    private function isSuperAdmin(): bool
+    {
+        $user = auth()->user();
+        return $user && $user->hasRole('super_admin');
+    }
+
     private function isUnauthorizedTenant($user)
     {
-        $authUser = auth()->user();
 
-        return !$authUser->hasRole('super_admin') &&
-               $user->company_id !== $authUser->company_id;
+        return !$this->isSuperAdmin() &&
+               $user->company_id !== auth()->user()->company_id;
     }
 
     public function getUsers($filters)
@@ -74,6 +100,8 @@ class UserService
 
     public function updateUser($id, $data)
     {
+        $data = $this->allowedUserUpdateData($data);
+
         $user = User::withoutGlobalScope(CompanyScope::class)->find($id);
 
         if (!$user) {
@@ -86,7 +114,6 @@ class UserService
 
         // Tenant check
         if ($this->isUnauthorizedTenant($user)) {
-
             return [
                 'status' => false,
                 'message' => 'Unauthorized access',
@@ -94,13 +121,18 @@ class UserService
             ];
         }
 
-
-        // Hash password if present
         if (!empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
 
         $user->update($data);
+
+        $this->logActivity(
+            'updated',
+            $user,
+            $oldData,
+            $user->fresh()->toArray()
+        );
 
         return [
             'status' => true,
@@ -115,6 +147,13 @@ class UserService
         $data['password'] = Hash::make($data['password']);
     
         $user = $this->userRepo->create($data);
+
+        $this->logActivity(
+            'created',
+            $user,
+            null,
+            $user->toArray()
+        );
     
         return [
             'status' => true,
@@ -147,6 +186,13 @@ class UserService
         }
     
         $user->delete();
+
+        $this->logActivity(
+            'deleted',
+            $user,
+            $oldData,
+            null
+        );
     
         return [
             'status' => true,
