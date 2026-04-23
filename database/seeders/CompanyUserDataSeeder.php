@@ -30,6 +30,7 @@ class CompanyUserDataSeeder extends Seeder
 
         User::factory(2)->create([
             'company_id' => $company1->id,
+            'created_by' => $admin1->id,
         ])->each(function ($user) use ($userRole) {
             $user->roles()->syncWithoutDetaching([$userRole->id]);
         });
@@ -49,6 +50,7 @@ class CompanyUserDataSeeder extends Seeder
 
         User::factory(2)->create([
             'company_id' => $company2->id,
+            'created_by' => $admin2->id,
         ])->each(function ($user) use ($userRole) {
             $user->roles()->syncWithoutDetaching([$userRole->id]);
         });
