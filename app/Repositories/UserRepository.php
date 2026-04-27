@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use App\Interfaces\UserRepositoryInterface;
 
 class UserRepository implements UserRepositoryInterface
@@ -26,6 +27,8 @@ class UserRepository implements UserRepositoryInterface
 
         $user->save();
 
+        Cache::forget("company:{$user->company_id}:users");
+
         return $user;
     }
 
@@ -36,34 +39,44 @@ class UserRepository implements UserRepositoryInterface
 
     public function getAll($filters)
     {
-        $query = User::query();
+        $companyId = auth()->user()->company_id;
 
-        // Search (name/email)
-        if (!empty($filters['search'])) {
-            $search = $filters['search'];
+        $cacheKey = "company:{$companyId}:users:" . md5(json_encode($filters));
 
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%$search%")
-                  ->orWhere('email', 'like', "%$search%");
-            });
-        }
+        return Cache::remember($cacheKey, 300, function () use ($filters) {
 
-        // Sorting
-        if (!empty($filters['sort_by']) && !empty($filters['sort_order'])) {
-            $query->orderBy($filters['sort_by'], $filters['sort_order']);
-        } else {
-            $query->latest(); // default
-        }
+            $query = User::query();
 
-        // Pagination
-        $perPage = $filters['per_page'] ?? 10;
+            if (!empty($filters['search'])) {
+                $search = $filters['search'];
 
-        return $query->paginate($perPage);
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%$search%")
+                      ->orWhere('email', 'like', "%$search%");
+                });
+            }
+
+            if (!empty($filters['sort_by']) && !empty($filters['sort_order'])) {
+                $query->orderBy($filters['sort_by'], $filters['sort_order']);
+            } else {
+                $query->latest();
+            }
+
+            $perPage = $filters['per_page'] ?? 10;
+
+            return $query->paginate($perPage);
+        });
     }
 
     public function findById($id)
     {
-        return User::find($id);
+        $companyId = auth()->user()->company_id;
+
+        $cacheKey = "company:{$companyId}:user:{$id}";
+
+        return Cache::remember($cacheKey, 600, function () use ($id) {
+            return User::find($id);
+        });
     }
 
     public function update($id, $data)
@@ -75,6 +88,9 @@ class UserRepository implements UserRepositoryInterface
         }
     
         $user->update($data);
+
+        Cache::forget("company:{$user->company_id}:user:{$user->id}");
+        Cache::forget("company:{$user->company_id}:users");
     
         return $user;
     }
@@ -88,6 +104,9 @@ class UserRepository implements UserRepositoryInterface
         }
 
         $user->delete();
+
+        Cache::forget("company:{$user->company_id}:user:{$user->id}");
+        Cache::forget("company:{$user->company_id}:users");
 
         return true;
     }

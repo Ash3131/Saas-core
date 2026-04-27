@@ -7,11 +7,19 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class UserCreatedNotification extends Notification
+class UserCreatedNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
     protected $user;
+
+    public $tries = 3;
+    public $timeout = 60;
+
+    public function backoff()
+    {
+        return [10, 30];
+    }
 
     public function __construct($user)
     {
@@ -21,6 +29,14 @@ class UserCreatedNotification extends Notification
     public function via($notifiable)
     {
         return ['mail', 'database'];
+    }
+
+    public function viaQueues()
+    {
+        return [
+            'mail' => 'high',
+            'database' => 'default',
+        ];
     }
 
     // EMAIL
