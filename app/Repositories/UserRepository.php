@@ -3,31 +3,37 @@
 namespace App\Repositories;
 
 use App\Models\User;
+use App\Jobs\RefreshUserListCacheJob;
+use App\Services\Cache\UserCacheService;
 use Illuminate\Support\Facades\Cache;
 use App\Interfaces\UserRepositoryInterface;
 
 class UserRepository implements UserRepositoryInterface
 {
-    
+    protected $cache;
+
+    public function __construct(UserCacheService $cache)
+    {
+        $this->cache = $cache;
+    }
+
     public function create(array $data)
     {
         $user = new User();
 
         $user->fill($data);
 
-        // assign company id
         if (isset($data['company_id'])) {
             $user->company_id = $data['company_id'];
         }
 
-        // assign created by
         if (isset($data['created_by'])) {
             $user->created_by = $data['created_by'];
         }
 
         $user->save();
 
-        Cache::forget("company:{$user->company_id}:users");
+        $this->cache->clearUserListCache($user->company_id);
 
         return $user;
     }
@@ -39,42 +45,80 @@ class UserRepository implements UserRepositoryInterface
 
     public function getAll($filters)
     {
-        $companyId = auth()->user()->company_id;
+        $scope = $this->cache->getScope();
 
-        $cacheKey = "company:{$companyId}:users:" . md5(json_encode($filters));
+        $tag = $scope['tag'];
+        $companyId = $scope['company_id'];
 
-        return Cache::remember($cacheKey, 300, function () use ($filters) {
+        $key = md5(json_encode([
+            ...$filters,
+            'company_id' => $companyId
+        ]));
 
-            $query = User::query();
+        $cached = Cache::tags([$tag])->get($key);
 
-            if (!empty($filters['search'])) {
-                $search = $filters['search'];
+        if ($cached) {
 
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%$search%")
-                      ->orWhere('email', 'like', "%$search%");
-                });
+            $lockKey = "refresh_lock:{$key}";
+
+            if (Cache::add($lockKey, true, 30)) {
+                dispatch(new RefreshUserListCacheJob(
+                    $filters,
+                    $companyId,
+                    $tag,
+                    $key,
+                    $lockKey
+                ));
             }
+        
+            return $cached;
+        }
 
-            if (!empty($filters['sort_by']) && !empty($filters['sort_order'])) {
-                $query->orderBy($filters['sort_by'], $filters['sort_order']);
-            } else {
-                $query->latest();
-            }
+        $query = User::query();
 
-            $perPage = $filters['per_page'] ?? 10;
+        if ($companyId) {
+            $query->where('company_id', $companyId);
+        }
 
-            return $query->paginate($perPage);
-        });
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%$search%")
+                  ->orWhere('email', 'like', "%$search%");
+            });
+        }
+
+        if (!empty($filters['sort_by']) && !empty($filters['sort_order'])) {
+            $query->orderBy($filters['sort_by'], $filters['sort_order']);
+        } else {
+            $query->latest();
+        }
+
+        $perPage = $filters['per_page'] ?? 10;
+
+        $data = $query->paginate($perPage);
+
+        $result = [
+            'data' => collect($data->items())->map(fn($u) => $u->toArray())->toArray(),
+            'meta' => [
+                'current_page' => $data->currentPage(),
+                'last_page' => $data->lastPage(),
+                'per_page' => $data->perPage(),
+                'total' => $data->total(),
+            ]
+        ];
+
+        Cache::tags([$tag])->put($key, $result, $this->cache->getUserListTTL());
+
+        return $result;
     }
 
     public function findById($id)
     {
-        $companyId = auth()->user()->company_id;
+        $cacheKey = $this->cache->getUserCacheKey($id);
 
-        $cacheKey = "company:{$companyId}:user:{$id}";
-
-        return Cache::remember($cacheKey, 600, function () use ($id) {
+        return Cache::remember($cacheKey, $this->cache->getUserTTL(), function () use ($id) {
             return User::find($id);
         });
     }
@@ -82,16 +126,16 @@ class UserRepository implements UserRepositoryInterface
     public function update($id, $data)
     {
         $user = User::find($id);
-        
+
         if (!$user) {
             return null;
         }
-    
+
         $user->update($data);
 
-        Cache::forget("company:{$user->company_id}:user:{$user->id}");
-        Cache::forget("company:{$user->company_id}:users");
-    
+        $this->cache->clearSingleUserCache($user->id, $user->company_id);
+        $this->cache->clearUserListCache($user->company_id);
+
         return $user;
     }
 
@@ -103,10 +147,12 @@ class UserRepository implements UserRepositoryInterface
             return null;
         }
 
+        $companyId = $user->company_id;
+
         $user->delete();
 
-        Cache::forget("company:{$user->company_id}:user:{$user->id}");
-        Cache::forget("company:{$user->company_id}:users");
+        $this->cache->clearSingleUserCache($id, $companyId);
+        $this->cache->clearUserListCache($companyId);
 
         return true;
     }

@@ -55,17 +55,12 @@ class UserService
     public function getUsers($filters)
     {
         $users = $this->userRepo->getAll($filters);
-    
+
         return [
             'status' => true,
             'message' => 'Users fetched successfully',
-            'data' => $users->items(),
-            'meta' => [
-                'current_page' => $users->currentPage(),
-                'last_page' => $users->lastPage(),
-                'per_page' => $users->perPage(),
-                'total' => $users->total(),
-            ],
+            'data' => $users['data'],
+            'meta' => $users['meta'],
             'code' => 200
         ];
     }
