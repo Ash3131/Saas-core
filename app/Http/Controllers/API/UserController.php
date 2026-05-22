@@ -4,15 +4,18 @@ namespace App\Http\Controllers\API;
 
 use Illuminate\Http\Request;
 use App\Services\UserService;
+use App\Services\Cache\UserCacheService;
 use App\Http\Controllers\API\BaseAPIController;
 
 class UserController extends BaseAPIController
 {
     protected $userService;
+    protected $userCacheService;
 
-    public function __construct(UserService $userService)
+    public function __construct(UserService $userService, UserCacheService $userCacheService)
     {
         $this->userService = $userService;
+        $this->userCacheService = $userCacheService;
     }
 
     public function index(Request $request)
@@ -101,6 +104,18 @@ class UserController extends BaseAPIController
             'status' => true,
             'message' => 'Marked as read',
             'data' => null,
+            'code' => 200
+        ]);
+    }
+
+    public function cacheMetrics(Request $request)
+    {
+        $companyId = $request->user()->company_id;
+    
+        return $this->handleResponse([
+            'status' => true,
+            'message' => 'Cache metrics fetched successfully',
+            'data' => $this->userCacheService->getUserCacheMetrics($companyId),
             'code' => 200
         ]);
     }

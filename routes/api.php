@@ -11,6 +11,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::get('/profile', [AuthController::class, 'profile']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Cache Metrics
+    Route::get('/cache-metrics', [UserController::class, 'cacheMetrics']);
     
     // Notifications
     Route::get('/notifications', [UserController::class, 'notifications']);

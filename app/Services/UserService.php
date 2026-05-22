@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Models\ActivityLog;
 use App\Models\Scopes\CompanyScope;
@@ -67,7 +68,7 @@ class UserService
 
     public function getUserById($id)
     {
-        $user = User::withoutGlobalScope(CompanyScope::class)->find($id);
+        $user = $this->userRepo->findById($id);
     
         if (!$user) {
             return [
@@ -97,10 +98,12 @@ class UserService
 
     public function updateUser($id, $data)
     {
+    
         $data = $this->allowedUserUpdateData($data);
-
+    
+        // Get user WITHOUT scope for validation
         $user = User::withoutGlobalScope(CompanyScope::class)->find($id);
-
+    
         if (!$user) {
             return [
                 'status' => false,
@@ -108,7 +111,7 @@ class UserService
                 'code' => 404
             ];
         }
-
+    
         if ($this->isUnauthorizedTenant($user)) {
             return [
                 'status' => false,
@@ -116,43 +119,45 @@ class UserService
                 'code' => 403
             ];
         }
-
+    
         $hidden = ['password', 'remember_token', 'updated_at', 'created_at'];
-
+    
         $oldData = collect($user->toArray())->except($hidden)->toArray();
-
+    
+        // Hash password if present
         if (!empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
-
-        $user->update($data);
-
-        $newData = collect($user->fresh()->toArray())->except($hidden)->toArray();
-
+    
+        $updatedUser = $this->userRepo->update($id, $data);
+    
+        // Get fresh data AFTER update
+        $newData = collect($updatedUser->fresh()->toArray())->except($hidden)->toArray();
+    
         $changedNew = array_diff_assoc($newData, $oldData);
-
+    
         if (empty($changedNew)) {
             return [
                 'status' => true,
                 'message' => 'User updated successfully',
-                'data' => $user,
+                'data' => $updatedUser,
                 'code' => 200
             ];
         }
-
+    
         $changedOld = array_intersect_key($oldData, $changedNew);
-
+    
         $this->logActivity(
             'updated',
-            $user,
+            $updatedUser,
             $changedOld,
             $changedNew
         );
-
+    
         return [
             'status' => true,
             'message' => 'User updated successfully',
-            'data' => $user,
+            'data' => $updatedUser,
             'code' => 200
         ];
     }
@@ -196,22 +201,30 @@ class UserService
             ];
         }
 
-        // Tenant check
         if ($this->isUnauthorizedTenant($user)) {
-
             return [
                 'status' => false,
                 'message' => 'Unauthorized access',
                 'code' => 403
             ];
         }
-    
-        $oldData = collect($user->toArray())->except(['password', 'remember_token', 'updated_at', 'created_at'])->toArray();
 
-        $user->delete();
+        $oldData = collect($user->toArray())
+            ->except(['password', 'remember_token', 'updated_at', 'created_at'])
+            ->toArray();
+
+        $deleted = $this->userRepo->delete($id);
+
+        if (!$deleted) {
+            return [
+                'status' => false,
+                'message' => 'Delete failed',
+                'code' => 500
+            ];
+        }
 
         $this->logActivity('deleted', $user, $oldData, null);
-    
+
         return [
             'status' => true,
             'message' => 'User deleted successfully',

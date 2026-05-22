@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Jobs\RefreshUserListCacheJob;
 use App\Services\Cache\UserCacheService;
@@ -16,6 +17,36 @@ class UserRepository implements UserRepositoryInterface
     {
         $this->cache = $cache;
     }
+
+    // public function warmUserListCache($companyId)
+    // {
+    //     $filters = [
+    //         'per_page' => 10,
+    //         'page' => 1
+    //     ];
+
+    //     // Correct tag handling (no auth dependency)
+    //     $tag = $companyId
+    //         ? "company:{$companyId}:users"
+    //         : "superadmin:users";
+
+    //     $version = $this->cache->getUserListVersion($companyId);
+
+    //     $key = $this->cache->generateUserListKey($filters, $companyId, $version);
+
+    //     $lockKey = "refresh_lock:{$key}";
+
+    //     // Prevent duplicate jobs
+    //     if (Cache::add($lockKey, true, 30)) {
+    //         dispatch_sync(new RefreshUserListCacheJob(
+    //             $filters,
+    //             $companyId,
+    //             $tag,
+    //             $key,
+    //             $lockKey
+    //         ));
+    //     }
+    // }
 
     public function create(array $data)
     {
@@ -33,7 +64,13 @@ class UserRepository implements UserRepositoryInterface
 
         $user->save();
 
-        $this->cache->clearUserListCache($user->company_id);
+        // Increment both scopes
+        $this->cache->incrementUserListVersion($user->company_id);
+        $this->cache->incrementUserListVersion(null);
+
+        // Warm both
+        // $this->warmUserListCache($user->company_id);
+        // $this->warmUserListCache(null);
 
         return $user;
     }
@@ -50,22 +87,30 @@ class UserRepository implements UserRepositoryInterface
         $tag = $scope['tag'];
         $companyId = $scope['company_id'];
 
-        $key = md5(json_encode([
-            ...$filters,
-            'company_id' => $companyId
-        ]));
+        // Normalize filters
+        $filters['page'] = $filters['page'] ?? request('page', 1);
+        ksort($filters);
 
-        $cached = Cache::tags([$tag])->get($key);
+        $version = $this->cache->getUserListVersion($companyId);
+
+        $key = $this->cache->generateUserListKey($filters, $companyId, $version);
+
+        Log::info('VERSION: ' . $version);
+        Log::info('KEY: ' . $key);
+
+        $prefix = "metrics:users:" . ($companyId ?? 'all');
+        
+        $cached = Cache::get($key);
 
         if ($cached) {
-
+            Cache::increment("{$prefix}:hit");
+                
             $lockKey = "refresh_lock:{$key}";
-
+                
             if (Cache::add($lockKey, true, 30)) {
                 dispatch(new RefreshUserListCacheJob(
                     $filters,
                     $companyId,
-                    $tag,
                     $key,
                     $lockKey
                 ));
@@ -73,6 +118,8 @@ class UserRepository implements UserRepositoryInterface
         
             return $cached;
         }
+
+        Cache::increment("{$prefix}:miss");
 
         $query = User::query();
 
@@ -109,7 +156,7 @@ class UserRepository implements UserRepositoryInterface
             ]
         ];
 
-        Cache::tags([$tag])->put($key, $result, $this->cache->getUserListTTL());
+        Cache::put($key, $result, $this->cache->getUserListTTL());
 
         return $result;
     }
@@ -126,6 +173,8 @@ class UserRepository implements UserRepositoryInterface
     public function update($id, $data)
     {
         $user = User::find($id);
+        Log::info('INCREMENT VERSION for company: ' . $user->company_id);
+
 
         if (!$user) {
             return null;
@@ -133,8 +182,19 @@ class UserRepository implements UserRepositoryInterface
 
         $user->update($data);
 
-        $this->cache->clearSingleUserCache($user->id, $user->company_id);
-        $this->cache->clearUserListCache($user->company_id);
+        Cache::put(
+            $this->cache->getUserCacheKey($user->id),
+            $user->fresh(),
+            $this->cache->getUserTTL()
+        );
+
+        // Increment both scopes
+        $this->cache->incrementUserListVersion($user->company_id);
+        $this->cache->incrementUserListVersion(null);
+
+        // Warm both
+        // $this->warmUserListCache($user->company_id);
+        // $this->warmUserListCache(null);
 
         return $user;
     }
@@ -149,10 +209,17 @@ class UserRepository implements UserRepositoryInterface
 
         $companyId = $user->company_id;
 
+        Cache::forget($this->cache->getUserCacheKey($user->id));
+
         $user->delete();
 
-        $this->cache->clearSingleUserCache($id, $companyId);
-        $this->cache->clearUserListCache($companyId);
+        // Increment both scopes
+        $this->cache->incrementUserListVersion($companyId);
+        $this->cache->incrementUserListVersion(null);
+
+        // Warm both
+        // $this->warmUserListCache($companyId);
+        // $this->warmUserListCache(null);
 
         return true;
     }

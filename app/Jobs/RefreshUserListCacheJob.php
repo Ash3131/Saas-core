@@ -4,9 +4,9 @@ namespace App\Jobs;
 
 use App\Models\User;
 use Illuminate\Bus\Queueable;
-use App\Services\Cache\UserCacheService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class RefreshUserListCacheJob implements ShouldQueue
 {
@@ -14,23 +14,19 @@ class RefreshUserListCacheJob implements ShouldQueue
 
     protected $filters;
     protected $companyId;
-    protected $tag;
     protected $key;
-    protected $cache;
     protected $lockKey;
 
-    public function __construct($filters, $companyId, $tag, $key, $lockKey)
+    public function __construct($filters, $companyId, $key, $lockKey)
     {
         $this->filters = $filters;
         $this->companyId = $companyId;
-        $this->tag = $tag;
         $this->key = $key;
         $this->lockKey = $lockKey;
     }
 
-    public function handle(UserCacheService $cache)
+    public function handle()
     {
-        try {
             $query = User::query();
 
             if ($this->companyId) {
@@ -41,13 +37,16 @@ class RefreshUserListCacheJob implements ShouldQueue
                 $search = $this->filters['search'];
 
                 $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%$search%")
-                      ->orWhere('email', 'like', "%$search%");
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%");
                 });
             }
 
             if (!empty($this->filters['sort_by']) && !empty($this->filters['sort_order'])) {
-                $query->orderBy($this->filters['sort_by'], $this->filters['sort_order']);
+                $query->orderBy(
+                    $this->filters['sort_by'],
+                    $this->filters['sort_order']
+                );
             } else {
                 $query->latest();
             }
@@ -56,19 +55,23 @@ class RefreshUserListCacheJob implements ShouldQueue
 
             $data = $query->paginate($perPage);
 
-            Cache::tags([$this->tag])->put($this->key, [
-                'data' => collect($data->items())->map(fn($u) => $u->toArray())->toArray(),
+            $result = [
+                'data' => collect($data->items())
+                    ->map(fn($u) => $u->toArray())
+                    ->toArray(),
+
                 'meta' => [
                     'current_page' => $data->currentPage(),
                     'last_page' => $data->lastPage(),
                     'per_page' => $data->perPage(),
                     'total' => $data->total(),
                 ]
-            ], $cache->getUserListTTL());
+            ];
 
-        } finally {
-            // always release lock
-            Cache::forget($this->lockKey);
-        }
+            Cache::put(
+                $this->key,
+                $result,
+                now()->addMinutes(10)
+            );
     }
 }
